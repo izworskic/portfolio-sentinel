@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Portfolio Sentinel v2</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #c9d1d9; --dim: #8b949e;
+    --pass: #3fb950; --warn: #d29922; --fail: #f85149; --info: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14px; line-height: 1.5; padding: 20px; }
+  h1 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+  .sub { color: var(--dim); font-size: 12px; margin-bottom: 20px; }
+  .banner { padding: 12px 16px; border-radius: 8px; margin-bottom: 20px;
+    border: 1px solid var(--border); font-weight: 600; }
+  .banner.pass { border-color: var(--pass); color: var(--pass); }
+  .banner.warn { border-color: var(--warn); color: var(--warn); }
+  .banner.fail { border-color: var(--fail); color: var(--fail); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .card h2 { font-size: 14px; margin: 0 0 8px; display: flex; justify-content: space-between; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-top: 4px; }
+  .dot.pass { background: var(--pass); } .dot.warn { background: var(--warn); } .dot.fail { background: var(--fail); }
+  .stat { color: var(--dim); font-size: 12px; }
+  .issue { font-size: 12px; margin-top: 6px; padding: 6px 8px; border-radius: 4px; background: #0d1117; word-break: break-all; }
+  .issue.critical { border-left: 3px solid var(--fail); }
+  .issue.warn { border-left: 3px solid var(--warn); }
+  .issue.info { border-left: 3px solid var(--info); color: var(--dim); }
+  section { margin-top: 24px; }
+  section h3 { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  .delta-new { color: var(--fail); } .delta-rec { color: var(--pass); }
+  .row { padding: 4px 0; font-size: 13px; border-bottom: 1px solid var(--border); word-break: break-all; }
+  .pass-txt { color: var(--pass); } .fail-txt { color: var(--fail); }
+  footer { margin-top: 30px; color: var(--dim); font-size: 11px; }
+</style>
+</head>
+<body>
+<h1>Portfolio Sentinel v2</h1>
+<div class="sub" id="meta">Loading latest sweep...</div>
+<div id="banner"></div>
+<div id="deltas"></div>
+<div class="grid" id="props"></div>
+<section><h3>Redirect chains</h3><div id="redirects"></div></section>
+<section><h3>Crawlability</h3><div id="vercel"></div></section>
+<footer>18 properties watched. Checks: availability, crawlability, sitemap URL health, staleness (48h on daily and in-season properties), IndexNow key files, em dash rule. Sweeps daily 10:10 UTC via GitHub Actions. 90-day history in Supabase.</footer>
+<script>
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+async function load() {
+  const r = await fetch("https://juqexesnmfmozxtpqxkh.supabase.co/rest/v1/sentinel_state?key=eq.sentinel:latest&select=value",
+    { headers: { apikey: "sb_publishable_tXBPOHtWcy4Nqyd7Ivu3Ew_VCUJ-OeT" } });
+  const rows = await r.json();
+  const d = rows.length ? rows[0].value : { status: "empty", message: "No sweep has run yet." };
+  const meta = document.getElementById("meta");
+  if (d.status === "empty") { meta.textContent = d.message; return; }
+  meta.textContent = "Last sweep: " + d.ranAt + " | " + d.totals.urlsChecked + " URLs checked in " + (d.durationMs/1000).toFixed(1) + "s";
+  const b = document.getElementById("banner");
+  b.className = "banner " + d.status;
+  b.textContent = d.status === "pass" ? "ALL SYSTEMS CLEAN" :
+    d.status === "warn" ? "WARNINGS PRESENT: " + d.totals.warnCount :
+    "FAILURES: " + d.totals.criticalCount + " critical";
+  if (d.deltas && (d.deltas.newFailures.length || d.deltas.recovered.length)) {
+    const dv = document.getElementById("deltas");
+    let h = "<section><h3>Changes since previous sweep</h3>";
+    d.deltas.newFailures.forEach(k => h += '<div class="row delta-new">NEW: ' + esc(k) + "</div>");
+    d.deltas.recovered.forEach(k => h += '<div class="row delta-rec">RECOVERED: ' + esc(k) + "</div>");
+    dv.innerHTML = h + "</section>";
+  }
+  document.getElementById("props").innerHTML = d.properties.map(p => {
+    const crit = p.issues.filter(i => i.severity === "critical").length;
+    const warn = p.issues.filter(i => i.severity === "warn").length;
+    const cls = crit ? "fail" : warn ? "warn" : "pass";
+    return '<div class="card"><h2>' + esc(p.host) + ' <span class="dot ' + cls + '"></span></h2>' +
+      '<div class="stat">' + p.stats.urlsOk + "/" + p.stats.urlsChecked + " sitemap URLs OK</div>" +
+      p.issues.map(i => '<div class="issue ' + i.severity + '">[' + i.check + "] " + esc(i.detail) + "</div>").join("") +
+      "</div>";
+  }).join("");
+  document.getElementById("redirects").innerHTML = d.redirects.map(x =>
+    '<div class="row"><span class="' + (x.pass ? "pass-txt" : "fail-txt") + '">' + (x.pass ? "OK" : "FAIL") + "</span> " +
+    esc(x.from) + " : " + esc(x.detail) + "</div>").join("");
+  document.getElementById("vercel").innerHTML = d.vercel.map(v =>
+    '<div class="row"><span class="' + (v.pass ? "pass-txt" : "fail-txt") + '">' + (v.pass ? "OK" : "FAIL") + "</span> " +
+    esc(v.name) + " : " + esc(v.detail) + "</div>").join("");
+}
+load();
+</script>
+</body>
+</html>
