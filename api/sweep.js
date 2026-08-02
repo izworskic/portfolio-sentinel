@@ -1,5 +1,5 @@
 // portfolio-sentinel-v2 daily sweep. Rule: no em dash characters in this codebase.
-const { PROPERTIES, REDIRECTS, INDEXNOW_KEY, EM_DASH, STALE_HOURS, fetchText, sbGet, sbSet, inWindow, sha256 } = require("../lib.js");
+const { PROPERTIES, REDIRECTS, FEEDS, INDEXNOW_KEY, EM_DASH, STALE_HOURS, fetchText, checkFeed, sbGet, sbSet, inWindow, sha256 } = require("../lib.js");
 
 async function checkProperty(p, now, prevHashes) {
   const issues = [];
@@ -64,8 +64,9 @@ async function checkProperty(p, now, prevHashes) {
 
   // 3. IndexNow key file present where expected.
   if (p.indexnow) {
-    const kf = await fetchText(`${base}/${INDEXNOW_KEY}.txt`);
-    if (!kf.ok || !kf.text.includes(INDEXNOW_KEY)) {
+    const key = p.indexnowKey || INDEXNOW_KEY;
+    const kf = await fetchText(`${base}/${key}.txt`);
+    if (!kf.ok || !kf.text.includes(key)) {
       issues.push({ severity: "warn", check: "indexnow", detail: `IndexNow key file missing (status ${kf.status})` });
     }
   }
@@ -105,9 +106,21 @@ module.exports = async (req, res) => {
   for (const p of PROPERTIES) properties.push(await checkProperty(p, now, prevHashes));
   const redirects = await Promise.all(REDIRECTS.map(checkRedirect));
 
-  const allIssues = properties.flatMap(p => p.issues.map(i => `${p.id}|${i.check}|${i.detail}`));
+  // Outbound feed sweep. Upstream providers move and delete endpoints without notice,
+  // and a page can stay green while the data behind it is gone.
+  const feeds = [];
+  const feedIssues = [];
+  const FEED_CONC = 6;
+  for (let i = 0; i < FEEDS.length; i += FEED_CONC) {
+    const batch = await Promise.all(FEEDS.slice(i, i + FEED_CONC).map(f => checkFeed(f, now)));
+    for (const b of batch) { feeds.push(b.result); feedIssues.push(...b.issues); }
+  }
+
+  const allIssues = properties.flatMap(p => p.issues.map(i => `${p.id}|${i.check}|${i.detail}`))
+    .concat(feedIssues.map(i => `feed|${i.check}|${i.detail}`));
   const failKeys = properties.flatMap(p => p.issues.filter(i => i.severity !== "info").map(i => `${p.id}|${i.check}|${i.detail}`))
-    .concat(redirects.filter(r => !r.pass).map(r => `redirect|${r.from}`));
+    .concat(redirects.filter(r => !r.pass).map(r => `redirect|${r.from}`))
+    .concat(feedIssues.map(i => `feed|${i.detail}`));
   const prevFailRow = await sbGet("sentinel:failkeys");
   const prevFails = prevFailRow ? prevFailRow.value : null;
   const deltas = {
@@ -118,14 +131,18 @@ module.exports = async (req, res) => {
 
   const totals = {
     criticalCount: properties.reduce((n, p) => n + p.issues.filter(i => i.severity === "critical").length, 0)
-      + redirects.filter(r => !r.pass).length,
-    warnCount: properties.reduce((n, p) => n + p.issues.filter(i => i.severity === "warn").length, 0),
+      + redirects.filter(r => !r.pass).length
+      + feedIssues.filter(i => i.severity === "critical").length,
+    warnCount: properties.reduce((n, p) => n + p.issues.filter(i => i.severity === "warn").length, 0)
+      + feedIssues.filter(i => i.severity === "warn").length,
+    feedsChecked: feeds.length,
+    feedsOk: feeds.filter(f => f.ok).length,
     urlsChecked: properties.reduce((n, p) => n + p.stats.urlsChecked, 0),
     urlsOk: properties.reduce((n, p) => n + p.stats.urlsOk, 0),
   };
   const status = totals.criticalCount ? "fail" : totals.warnCount ? "warn" : "pass";
 
-  const report = { ranAt: now.toISOString(), properties, redirects,
+  const report = { ranAt: now.toISOString(), properties, redirects, feeds, feedIssues,
     vercel: properties.map(p => {
       const prot = p.issues.find(i => i.check === "protection");
       return { name: p.id, pass: !prot, detail: prot ? prot.detail : "unprotected (crawlable)" };
@@ -140,5 +157,5 @@ module.exports = async (req, res) => {
   histArr.unshift({ ranAt: report.ranAt, status, totals });
   await sbSet("sentinel:history", histArr.slice(0, 90));
 
-  res.status(200).json({ ok: true, status, totals, durationMs: report.durationMs, allIssueCount: allIssues.length });
+  res.status(200).json({ ok: true, status, totals, durationMs: report.durationMs, allIssueCount: allIssues.length, feedIssues });
 };

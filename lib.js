@@ -17,7 +17,7 @@ const PROPERTIES = [
   { id: "birding-daily",     host: "daily.michiganbirdingreport.com",  sitemap: true,  cadence: "daily",  indexnow: true },
   { id: "great-lakes-levels",host: "greatlakeslevels.org",             sitemap: true,  cadence: "daily",  indexnow: true },
   { id: "gazette",           host: "gazette.chrisizworski.com",        sitemap: true,  cadence: "daily",  indexnow: true, urlCap: 80 },
-  { id: "personal-hub",      host: "chrisizworski.com",                sitemap: true,  cadence: "static", indexnow: true },
+  { id: "personal-hub",      host: "chrisizworski.com",                sitemap: true,  cadence: "static", indexnow: true, indexnowKey: "a3c17155d621f6c918e84d1632a662f1" },
   { id: "lawn-advisor",      host: "lawn.chrisizworski.com",           sitemap: true,  cadence: "daily",  indexnow: true },
   { id: "phenology",         host: "phenology.chrisizworski.com",      sitemap: true,  cadence: "daily",  indexnow: true },
   { id: "lspp-ice-out",      host: "lspp-ice-out.vercel.app",          sitemap: false, cadence: "seasonal", window: ["0301","0531"], indexnow: false },
@@ -57,6 +57,76 @@ async function fetchText(url, opts = {}) {
   } finally { clearTimeout(t); }
 }
 
+// Newest timestamp in a payload that is not in the future. Feeds routinely carry
+// forecast rows dated ahead of now, and treating those as "fresh" would hide a
+// dead feed. Returns null when nothing parseable is found, which is not a failure.
+function newestPastTimestamp(text, now) {
+  const matches = text.match(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?/g) || [];
+  let newest = null;
+  for (const raw of matches.slice(0, 4000)) {
+    const hasZone = /[Zz]$|[+-]\d\d:?\d\d$/.test(raw);
+    const d = new Date(raw.replace(" ", "T") + (hasZone ? "" : "Z"));
+    if (isNaN(d) || d > now) continue;
+    if (!newest || d > newest) newest = d;
+  }
+  return newest;
+}
+
+// Probe one outbound feed. Severity policy is deliberately conservative, because a
+// watchdog that cries wolf gets ignored: hard failures are critical, data going
+// stale is only a warn, and a feed with no timestamps is never penalised.
+async function checkFeed(f, now) {
+  const issues = [];
+  let r = await fetchText(f.url, { timeout: 25000 });
+  // Rate limits and 5xx are usually transient. Retry once before calling it a failure,
+  // so a momentary blip does not page anyone.
+  if (!r.ok && (r.status === 429 || r.status >= 500 || r.status === 0)) {
+    await new Promise(res => setTimeout(res, 4000));
+    r = await fetchText(f.url, { timeout: 25000 });
+  }
+  const bytes = r.ok ? Buffer.byteLength(r.text, "utf8") : 0;
+  const result = { id: f.id, owners: f.owners || [], status: r.status, bytes, ok: true };
+
+  if (!r.ok) {
+    // A 429 that survives a retry is throttling, not a dead endpoint. Warn, do not alarm.
+    const transient = r.status === 429;
+    issues.push({ severity: transient ? "warn" : "critical", check: "feed",
+      detail: `${f.id} returned status ${r.status}${r.error ? " " + r.error : ""} (owners: ${(f.owners || []).join(", ") || "unknown"})${transient ? ", rate limited after retry" : ""}` });
+    result.ok = false;
+    return { result, issues };
+  }
+  const floor = f.minBytes || 1;
+  if (bytes < floor) {
+    issues.push({ severity: "critical", check: "feed",
+      detail: `${f.id} returned only ${bytes} bytes, floor is ${floor}, likely an error page served as 200` });
+    result.ok = false;
+  }
+  if (f.kind === "json") {
+    try { JSON.parse(r.text); }
+    catch (e) {
+      issues.push({ severity: "critical", check: "feed", detail: `${f.id} did not parse as JSON` });
+      result.ok = false;
+    }
+  }
+  if (f.must && !r.text.includes(f.must)) {
+    issues.push({ severity: "critical", check: "feed",
+      detail: `${f.id} response is missing expected field "${f.must}", the shape may have changed` });
+    result.ok = false;
+  }
+  if (f.maxAgeH) {
+    const newest = newestPastTimestamp(r.text, now);
+    if (newest) {
+      const ageH = (now - newest) / 3600000;
+      result.dataAgeH = Math.round(ageH * 10) / 10;
+      if (ageH > f.maxAgeH) {
+        issues.push({ severity: "warn", check: "feed",
+          detail: `${f.id} newest data is ${Math.round(ageH)}h old, expected under ${f.maxAgeH}h` });
+      }
+    }
+  }
+  return { result, issues };
+}
+
 async function sbGet(key) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/sentinel_state?key=eq.${encodeURIComponent(key)}&select=value,updated_at`, {
     headers: { apikey: SUPABASE_KEY, authorization: `Bearer ${SUPABASE_KEY}` } });
@@ -86,4 +156,6 @@ async function sha256(s) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-module.exports = { PROPERTIES, REDIRECTS, INDEXNOW_KEY, EM_DASH, STALE_HOURS, fetchText, sbGet, sbSet, inWindow, sha256 };
+const { FEEDS } = require("./feeds.js");
+
+module.exports = { PROPERTIES, REDIRECTS, FEEDS, checkFeed, INDEXNOW_KEY, EM_DASH, STALE_HOURS, fetchText, sbGet, sbSet, inWindow, sha256 };

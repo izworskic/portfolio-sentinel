@@ -46,9 +46,10 @@
 <div id="banner"></div>
 <div id="deltas"></div>
 <div class="grid" id="props"></div>
+<section><h3>Outbound feeds</h3><div id="feeds"></div></section>
 <section><h3>Redirect chains</h3><div id="redirects"></div></section>
 <section><h3>Crawlability</h3><div id="vercel"></div></section>
-<footer>18 properties watched. Checks: availability, crawlability, sitemap URL health, staleness (48h on daily and in-season properties), IndexNow key files, em dash rule. Sweeps daily 10:10 UTC via GitHub Actions. 90-day history in Supabase.</footer>
+<footer>18 properties and 30 outbound feeds watched. Checks: availability, crawlability, sitemap URL health, staleness (48h on daily and in-season properties), IndexNow key files, em dash rule, and upstream feed health (status, payload floor, JSON shape, data age). Sweeps daily 10:10 UTC via GitHub Actions. 90-day history in Supabase.</footer>
 <script>
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 async function load() {
@@ -80,6 +81,21 @@ async function load() {
       p.issues.map(i => '<div class="issue ' + i.severity + '">[' + i.check + "] " + esc(i.detail) + "</div>").join("") +
       "</div>";
   }).join("");
+  var feedEl = document.getElementById("feeds");
+  if (d.feeds && d.feeds.length) {
+    var bad = (d.feedIssues || []);
+    feedEl.innerHTML = '<div class="row">' + d.feeds.filter(function(f){return f.ok;}).length + " of " +
+      d.feeds.length + " feeds healthy</div>" +
+      d.feeds.map(function (f) {
+        var note = f.ok ? (f.dataAgeH !== undefined ? "data " + f.dataAgeH + "h old" : "ok") : "status " + f.status;
+        return '<div class="row"><span class="' + (f.ok ? "pass-txt" : "fail-txt") + '">' + (f.ok ? "OK" : "FAIL") +
+          "</span> " + esc(f.id) + " : " + esc(note) +
+          (f.owners && f.owners.length ? ' <span class="sub">(' + esc(f.owners.join(", ")) + ")</span>" : "") + "</div>";
+      }).join("") +
+      bad.map(function (i) { return '<div class="issue ' + i.severity + '">[feed] ' + esc(i.detail) + "</div>"; }).join("");
+  } else {
+    feedEl.innerHTML = '<div class="row">No feed data in this sweep yet.</div>';
+  }
   document.getElementById("redirects").innerHTML = d.redirects.map(x =>
     '<div class="row"><span class="' + (x.pass ? "pass-txt" : "fail-txt") + '">' + (x.pass ? "OK" : "FAIL") + "</span> " +
     esc(x.from) + " : " + esc(x.detail) + "</div>").join("");
