@@ -80,12 +80,21 @@ async function checkRedirect(rd) {
   if (!r.ok) { detail = `status ${r.status} ${r.error || ""}`.trim(); }
   else {
     try {
-      const finalHost = new URL(r.url).host;
-      pass = finalHost === rd.expectedHost;
-      detail = pass ? `resolved to ${r.url}` : `resolved to ${finalHost}, expected ${rd.expectedHost}`;
+      const final = new URL(r.url);
+      const hostOk = final.host === rd.expectedHost;
+      // expectedPath is optional and off by default, so existing entries are
+      // unaffected. It exists for forwards where landing on the right host is
+      // not enough: a catch-all that collapses every deep URL onto a section
+      // index or homepage passes a host check while quietly losing the mapping.
+      const pathOk = !rd.expectedPath || final.pathname === rd.expectedPath;
+      pass = hostOk && pathOk;
+      if (pass) detail = `resolved to ${r.url}`;
+      else if (!hostOk) detail = `resolved to ${final.host}, expected ${rd.expectedHost}`;
+      else detail = `resolved to ${final.pathname}, expected ${rd.expectedPath}`;
+      if (!pass && rd.note) detail += ` (${rd.note})`;
     } catch { detail = "could not parse final URL"; }
   }
-  return { from: rd.from, expectedHost: rd.expectedHost, maxHops: rd.maxHops, pass, detail };
+  return { from: rd.from, expectedHost: rd.expectedHost, expectedPath: rd.expectedPath, maxHops: rd.maxHops, pass, detail };
 }
 
 module.exports = async (req, res) => {
