@@ -17,7 +17,7 @@ const PROPERTIES = [
   { id: "birding-daily",     host: "daily.michiganbirdingreport.com",  sitemap: true,  cadence: "daily",  indexnow: true },
   { id: "great-lakes-levels",host: "greatlakeslevels.org",             sitemap: true,  cadence: "daily",  indexnow: true },
   { id: "gazette",           host: "gazette.chrisizworski.com",        sitemap: true,  cadence: "daily",  indexnow: true, urlCap: 80 },
-  { id: "personal-hub",      host: "chrisizworski.com",                sitemap: true,  cadence: "static", indexnow: true, indexnowKey: "a3c17155d621f6c918e84d1632a662f1" },
+  { id: "personal-hub",      host: "chrisizworski.com",                sitemap: true,  cadence: "static", indexnow: true, indexnowKey: "a3c17155d621f6c918e84d1632a662f1", urlCap: 140 },
   { id: "lawn-advisor",      host: "lawn.chrisizworski.com",           sitemap: true,  cadence: "daily",  indexnow: true },
   { id: "phenology",         host: "phenology.chrisizworski.com",      sitemap: true,  cadence: "daily",  indexnow: true },
   { id: "lspp-ice-out",      host: "lspp-ice-out.vercel.app",          sitemap: false, cadence: "seasonal", window: ["0301","0531"], indexnow: false },
@@ -42,6 +42,21 @@ const REDIRECTS = [
   { from: "https://troutdaily.chrisizworski.com/", expectedHost: "daily.michigantroutreport.com", maxHops: 2 },
   { from: "http://michigantroutreport.com/",       expectedHost: "michigantroutreport.com", maxHops: 2 },
   { from: "http://gazette.chrisizworski.com/",     expectedHost: "gazette.chrisizworski.com", maxHops: 2 },
+
+  // Michigan Ice Report moved off ice.chrisizworski.com onto the hub in Aug 2026.
+  // The subdomain now exists only to serve 301s. If the michigan-ice-report Vercel
+  // project or the ice CNAME is ever deleted, these go red and say why. expectedPath
+  // matters here: a degraded catch-all that dumps everything on the hub homepage
+  // would still land on the right HOST and would otherwise pass silently.
+  { from: "https://ice.chrisizworski.com/", expectedHost: "chrisizworski.com",
+    expectedPath: "/michigan-ice/", maxHops: 2,
+    note: "keep the michigan-ice-report Vercel project and the ice CNAME alive" },
+  { from: "https://ice.chrisizworski.com/ice-cover-history.html", expectedHost: "chrisizworski.com",
+    expectedPath: "/michigan-ice/ice-cover-history.html", maxHops: 2,
+    note: "per-page 301, not a catch-all to the section index" },
+  { from: "https://ice.chrisizworski.com/regions/saginaw-bay.html", expectedHost: "chrisizworski.com",
+    expectedPath: "/michigan-ice/regions/saginaw-bay.html", maxHops: 2,
+    note: "region pages are a second URL shape and have their own rule" },
 ];
 
 async function fetchText(url, opts = {}) {

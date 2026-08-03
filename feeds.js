@@ -87,7 +87,7 @@ const FEEDS = [
     owners: ["personal-hub"], kind: "json", minBytes: 20000 },
   { id: "hub-api-border",    url: "https://chrisizworski.com/api/border-crossings",
     owners: ["personal-hub"], kind: "json", minBytes: 5000 },
-  { id: "ice-api",           url: "https://ice.chrisizworski.com/api/ice",
+  { id: "ice-api",           url: "https://chrisizworski.com/api/ice",
     owners: ["ice"], kind: "json", minBytes: 200, maxAgeH: 36 },
   { id: "whitetail-api-harvest", url: "https://whitetail.chrisizworski.com/api/harvest",
     owners: ["whitetail"], kind: "json", minBytes: 60, maxAgeH: 36 },
