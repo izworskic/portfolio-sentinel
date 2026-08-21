@@ -10,13 +10,17 @@ const STALE_HOURS = 48;
 // cadence: "daily" gets the staleness check every sweep.
 // "seasonal" gets it only inside its window [startMMDD, endMMDD].
 // "static" is hash-tracked but never flagged stale.
+// urlCap defaults to 60 in api/sweep.js. Any property whose sitemap outgrows its
+// cap is silently only partly checked, and the sweep reports that as "info" rather
+// than a problem. Caps below are set above the current sitemap size with headroom.
+// If a sweep logs "sitemap has N URLs, checking first M", raise the cap here.
 const PROPERTIES = [
-  { id: "trout-main",        host: "michigantroutreport.com",          sitemap: true,  cadence: "daily",  indexnow: true },
-  { id: "trout-daily",       host: "daily.michigantroutreport.com",    sitemap: true,  cadence: "daily",  indexnow: true },
-  { id: "birding",           host: "michiganbirdingreport.com",        sitemap: true,  cadence: "daily",  indexnow: true },
-  { id: "birding-daily",     host: "daily.michiganbirdingreport.com",  sitemap: true,  cadence: "daily",  indexnow: true },
+  { id: "trout-main",        host: "michigantroutreport.com",          sitemap: true,  cadence: "daily",  indexnow: true, urlCap: 160 },
+  { id: "trout-daily",       host: "daily.michigantroutreport.com",    sitemap: true,  cadence: "daily",  indexnow: true, urlCap: 140 },
+  { id: "birding",           host: "michiganbirdingreport.com",        sitemap: true,  cadence: "daily",  indexnow: true, urlCap: 140 },
+  { id: "birding-daily",     host: "daily.michiganbirdingreport.com",  sitemap: true,  cadence: "daily",  indexnow: true, urlCap: 140 },
   { id: "great-lakes-levels",host: "greatlakeslevels.org",             sitemap: true,  cadence: "daily",  indexnow: true },
-  { id: "gazette",           host: "gazette.chrisizworski.com",        sitemap: true,  cadence: "daily",  indexnow: true, urlCap: 80 },
+  { id: "gazette",           host: "gazette.chrisizworski.com",        sitemap: true,  cadence: "daily",  indexnow: true, urlCap: 120 },
   { id: "personal-hub",      host: "chrisizworski.com",                sitemap: true,  cadence: "static", indexnow: true, indexnowKey: "a3c17155d621f6c918e84d1632a662f1", urlCap: 140 },
   { id: "lawn-advisor",      host: "lawn.chrisizworski.com",           sitemap: true,  cadence: "daily",  indexnow: true },
   { id: "phenology",         host: "phenology.chrisizworski.com",      sitemap: true,  cadence: "daily",  indexnow: true },
@@ -27,7 +31,7 @@ const PROPERTIES = [
   { id: "pictured-rocks",    host: "picturedrocks.chrisizworski.com",  sitemap: true,  cadence: "static", indexnow: true },
   { id: "xcski",             host: "xcski.chrisizworski.com",          sitemap: true,  cadence: "seasonal", window: ["1201","0331"], indexnow: true },
   { id: "camp",              host: "camp.chrisizworski.com",           sitemap: false, cadence: "static", indexnow: false },
-  { id: "fvf-wordpress",     host: "freighterviewfarms.com",           sitemap: true,  cadence: "static", indexnow: false },
+  { id: "fvf-wordpress",     host: "freighterviewfarms.com",           sitemap: true,  cadence: "static", indexnow: false, urlCap: 140 },
   { id: "github-pages",      host: "izworskic.github.io",              sitemap: false, cadence: "static", indexnow: false },
 ];
 
